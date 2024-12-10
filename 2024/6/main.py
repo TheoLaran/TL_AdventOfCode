@@ -13,39 +13,6 @@ res = 0
 data = get_data()
 ###############################################################################
 
-def integer_to_pnt(itg, nb_cols):
-
-    itg &= (~0xF)
-    pnt_int = itg >> 4
-    return pnt_int % nb_cols, pnt_int // nb_cols
-
-def point_to_integer(pnt, nb_cols, sens):
-    # Sens +1 on 4 bits
-    sens_val = ((sens[0] + 1) << 2) + (sens[1] + 1)
-    # Point integer computation
-    pnt_int = pnt[0] + pnt[1] * nb_cols
-
-    return (pnt_int << 4) + sens_val
-
-
-def compute_next_dir(dct):
-    
-    if dct[0] == 0:
-        x = -dct[1]
-        y = 0
-    else:
-        y = dct[0]
-        x = 0
-    return (x, y)
-
-for d in [(0,1),
-          (0,-1),
-          (-1,0),
-          (1, 0)
-          ]:
-    print(f"{d=}, nd={compute_next_dir(d)}")
-
-
 STR_TO_DIRECTION = {
         "^": (0,-1),
         "v": (0,1),
@@ -53,15 +20,29 @@ STR_TO_DIRECTION = {
         ">": (1, 0)
 }
 
+DEBUG = True
+PART_ONE = False
+visited = set()
+cross = []
+
+import re
+from bisect import insort_left
+
+WALL_X_TO_Y = {}
+###
+WALL_Y_TO_X = {}
+
 # Init map parameters
-next_dct = (0,0)
+curr_dir = (0,0)
 ###
 curr_pnt = (0,0)
 ###
 NB_COLS = len(data[0])
 ###
 NB_ROWS = len(data)
+###
 
+WALL_REGEX = "(?=#)"
 for i, line in enumerate(data):
     for key in STR_TO_DIRECTION:
         # If the key is not in the line do nothing
@@ -69,58 +50,146 @@ for i, line in enumerate(data):
             continue
         # otherwise update parameters
         curr_pnt = (line.find(key), i)
-        next_dct = STR_TO_DIRECTION[key]              
+        curr_dir = key
 
-DEBUG = True
-PART_ONE = False
+    for wall_pos in re.finditer(WALL_REGEX, line):
+        wp = wall_pos.start()
+
+        if i not in WALL_Y_TO_X:
+            WALL_Y_TO_X[i] = []
+        
+        if wp not in WALL_X_TO_Y:
+            WALL_X_TO_Y[wp] = []
+        
+        insort_left(WALL_Y_TO_X[i], wp)
+        insort_left(WALL_X_TO_Y[wp], i)
+
 visited = set()
-cross = []
+
+def get_wall_pos(curr_dir, x, y):
+    curr_pnt = None
+    end_x, end_y = x, y
+    match curr_dir:
+        case "^":
+            # If not wall in this column break
+            if x not in WALL_X_TO_Y:
+                return None
+            else:
+                # Otherwise search first wall ahead
+                next_walls_y = list(filter(lambda ny: ny < y, WALL_X_TO_Y[x]))
+                if len(next_walls_y) == 0:
+                    return None
+                else:
+                    end_y = next_walls_y[-1] + 1
+                    curr_pnt = (end_x, end_y)
+                    curr_dir = ">"
+        
+        case "v":
+            # If not wall in this column break
+            if x not in WALL_X_TO_Y:
+                return None
+            else:
+                # Otherwise search first wall ahead
+                next_walls_y = list(filter(lambda ny: ny > y, WALL_X_TO_Y[x]))
+                if len(next_walls_y) == 0:
+                    return None
+                else: 
+                    end_y = next_walls_y[0] - 1
+                    curr_pnt = (end_x, end_y)
+                    curr_dir = "<"
+
+        case "<":
+            # If not wall in this line break
+            if y not in WALL_Y_TO_X:
+                return None
+
+            # Otherwise search first wall ahead
+            next_walls_x = list(filter(lambda nx: nx < x, WALL_Y_TO_X[y]))
+            if len(next_walls_x) == 0:
+                return None
+            else:
+                end_x = next_walls_x[-1] + 1
+                curr_pnt = (end_x, end_y)
+                curr_dir = "^"
+
+        case ">":
+            # If not wall in this line break
+            if y not in WALL_Y_TO_X:
+                return None
+            
+            # Otherwise search first wall ahead
+            next_walls_x = list(filter(lambda nx: nx > x, WALL_Y_TO_X[y]))
+            if len(next_walls_x) == 0:
+                return None
+            else:
+                end_x = next_walls_x[0] - 1
+                curr_pnt = (end_x, end_y)
+                curr_dir = "v"
+    
+    return curr_pnt, curr_dir
+
+obstacles = set()
+
 while True:
-
-    # if data[curr_pnt[1]][curr_pnt[0]] != "X": 
+    x, y = curr_pnt
+    should_break = False
     
-    itg = point_to_integer(curr_pnt, NB_COLS, (-1, -1))
-    # Compute next position
-    x, y =  curr_pnt[0] + next_dct[0], curr_pnt[1] + next_dct[1] 
-    if itg not in visited:
-        visited.add(itg)
-        if PART_ONE:
-            res += 1
-        else:
-            v = compute_next_dir(next_dct)
-            # TODO: do that until reach # or out of bound
-            tmp = curr_pnt[0], curr_pnt[1]
-            # If out of bound exit
-            while True:
-                tmp = tmp[0] + v[0], tmp[1] + v[1]
-                if tmp[0] < 0 or tmp[0] >= NB_COLS or tmp[1] < 0 or tmp[1] >= NB_ROWS:
-                    break
+    # create dynamic list of point visited
 
-                tmp_itg = point_to_integer(tmp , NB_COLS, v)
-                # If we already visit it break
-                if tmp_itg in visited:
-                    # Compute position for obstacle  
-                    tmp_itg = point_to_integer((x, y), NB_COLS, v)
-                    dir_visited.add(tmp_itg & (~0xF))
-                
-                # otherwise continue:
+    next_wall_pos = get_wall_pos(curr_dir, x, y)
+
+    if next_wall_pos is None:
+        end_y = y if (curr_dir == "<" or curr_dir == ">") else (-1 if curr_dir == "^" else NB_ROWS)
+        end_x = x if (curr_dir == "^" or curr_dir == "v") else (-1 if curr_dir == "<" else NB_COLS)
+    else:
+        curr_pnt, curr_dir = next_wall_pos
+        end_x, end_y = curr_pnt
+
+    if x == end_x:
+        for ny in range(y, end_y, (-1 if y > end_y else 1)):
+            itg = x + ny * NB_COLS
+            visited.add(itg)
+            if PART_ONE:
                 continue
-        # data[curr_pnt[1]] = data[curr_pnt[1]][:curr_pnt[0]] + "X" + data[curr_pnt[1]][curr_pnt[0] + 1:]  
+            else:
+                nd = curr_dir
+                npy = ny
+                npx = x
+                for _ in range(4):
+                    n_wall = get_wall_pos(nd, npx, npy)
+                    if n_wall is None:
+                        break
+                    (npx, npy), nd = n_wall
+                else:
+                    if npx == x and y <= npy <= end_y:
+                        obstacles.add(x + ny * NB_COLS)
+        
+    elif y == end_y:
+        for nx in range(x, end_x, (-1 if x > end_x else 1)):
+            itg = nx + y * NB_COLS
+            visited.add(itg)
+            if PART_ONE:
+                continue
+            else:
+                nd = curr_dir
+                npy = y
+                npx = nx
+                for _ in range(3):
+                    n_wall = get_wall_pos(nd, npx, npy)
+                    if n_wall is None:
+                        break
+                    (npx, npy), nd = n_wall
+                else:
+                    if y == npy and npx == x:
+                        obstacles.add(nx + y * NB_COLS)
+                
 
-    
-    # If we are out of bound guards exist, stop here
-    if x < 0 or x >= NB_COLS or y < 0 or y >= NB_ROWS:
+    else:
+        raise Exception(" Neither x and y are stable ! ")
+
+    if next_wall_pos is None:
         break
 
-    next_chr = data[y][x]
-    ###
-    if next_chr == "#":
-        # print("\n".join(data))
-        # print("\n" + "-" * 80 + "\n")
-        next_dct = compute_next_dir(next_dct)
-        if not PART_ONE:
-            cross.append((curr_pnt, next_dct))
-    else:
-        curr_pnt = (x,y)
 ###############################################################################
-print(res)
+print(len(visited))
+print(len(obstacles))
