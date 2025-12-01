@@ -1,4 +1,5 @@
 #!/bin/python3
+
 def get_data() -> list:
     """
         Return: List of each lines reads from inputs
@@ -8,16 +9,20 @@ def get_data() -> list:
     # with open("data.txt", "r") as f:
         return [line[:-1] for line in f]
 
-PART_ONE = False
+PART_ONE = True
 res = 0
 data = get_data()
 ###############################################################################
 
 STR_TO_DIRECTION = {
-        "^": (0,-1),
-        "v": (0,1),
-        "<": (-1,0),
-        ">": (1, 0)
+        # Up
+        0: (0,-1),
+        # Right
+        1: (1,0),
+        # Down
+        3: (0,1),
+        # Left
+        4: (-1, 0)
 }
 
 DEBUG = True
@@ -44,13 +49,19 @@ NB_ROWS = len(data)
 
 WALL_REGEX = "(?=#)"
 for i, line in enumerate(data):
-    for key in STR_TO_DIRECTION:
+    for key in ["^", ">", "v", "<"]:
         # If the key is not in the line do nothing
         if key not in line:
             continue
         # otherwise update parameters
         curr_pnt = (line.find(key), i)
-        curr_dir = key
+        curr_dir = (
+            0 if key == "^" else (
+                1 if key == ">" else (
+                    2 if key == "v" else 3
+                )
+            )
+        )
 
     for wall_pos in re.finditer(WALL_REGEX, line):
         wp = wall_pos.start()
@@ -67,10 +78,9 @@ for i, line in enumerate(data):
 visited = set()
 
 def get_wall_pos(curr_dir, x, y):
-    curr_pnt = None
     end_x, end_y = x, y
     match curr_dir:
-        case "^":
+        case 0:
             # If not wall in this column break
             if x not in WALL_X_TO_Y:
                 return None
@@ -81,10 +91,8 @@ def get_wall_pos(curr_dir, x, y):
                     return None
                 else:
                     end_y = next_walls_y[-1] + 1
-                    curr_pnt = (end_x, end_y)
-                    curr_dir = ">"
         
-        case "v":
+        case 2:
             # If not wall in this column break
             if x not in WALL_X_TO_Y:
                 return None
@@ -95,10 +103,8 @@ def get_wall_pos(curr_dir, x, y):
                     return None
                 else: 
                     end_y = next_walls_y[0] - 1
-                    curr_pnt = (end_x, end_y)
-                    curr_dir = "<"
 
-        case "<":
+        case 3:
             # If not wall in this line break
             if y not in WALL_Y_TO_X:
                 return None
@@ -109,10 +115,8 @@ def get_wall_pos(curr_dir, x, y):
                 return None
             else:
                 end_x = next_walls_x[-1] + 1
-                curr_pnt = (end_x, end_y)
-                curr_dir = "^"
 
-        case ">":
+        case 1:
             # If not wall in this line break
             if y not in WALL_Y_TO_X:
                 return None
@@ -123,28 +127,46 @@ def get_wall_pos(curr_dir, x, y):
                 return None
             else:
                 end_x = next_walls_x[0] - 1
-                curr_pnt = (end_x, end_y)
-                curr_dir = "v"
-    
-    return curr_pnt, curr_dir
+        case _:
+            raise Exception(f"Matching direction {curr_dir}")
+    return (end_x, end_y), (curr_dir + 1) % 4
+
+# hash wall to integer
+def wall_to_integer(n_wall_pos, cdir):
+    x, y = n_wall_pos
+    return (x + y * NB_COLS) << 3 + cdir
+
+def update_obstacles(d, x, y):
+    global obstacles, founded
+
+    n_wall = get_wall_pos(d, x, y)
+    while n_wall is not None:
+        if wall_to_integer(*n_wall) in obstacles:
+            founded.add(x + (1 if d == 3 else (-1 if d == 1 else 0)) + \
+                        (y + (1 if d == 0 else (-1 if d == 2 else 0))) * NB_COLS)
+            return
+        (npx, npy), nd = n_wall
+        n_wall = get_wall_pos(nd, npx, npy)
 
 obstacles = set()
+founded = set()
 
 while True:
     x, y = curr_pnt
     should_break = False
     
     # create dynamic list of point visited
-
     next_wall_pos = get_wall_pos(curr_dir, x, y)
-
+    print(curr_dir, next_wall_pos)
     if next_wall_pos is None:
-        end_y = y if (curr_dir == "<" or curr_dir == ">") else (-1 if curr_dir == "^" else NB_ROWS)
-        end_x = x if (curr_dir == "^" or curr_dir == "v") else (-1 if curr_dir == "<" else NB_COLS)
+        end_y = y if (curr_dir == 1 or curr_dir == 3) else (-1 if curr_dir == 0 else NB_ROWS)
+        end_x = x if (curr_dir == 0 or curr_dir == 2) else (-1 if curr_dir == 1 else NB_COLS)
+        curr_dir = (curr_dir + 1) % 4
     else:
         curr_pnt, curr_dir = next_wall_pos
         end_x, end_y = curr_pnt
 
+    # TODO: Browse all walls and check if we hit one already visited
     if x == end_x:
         for ny in range(y, end_y, (-1 if y > end_y else 1)):
             itg = x + ny * NB_COLS
@@ -152,18 +174,8 @@ while True:
             if PART_ONE:
                 continue
             else:
-                nd = curr_dir
-                npy = ny
-                npx = x
-                for _ in range(4):
-                    n_wall = get_wall_pos(nd, npx, npy)
-                    if n_wall is None:
-                        break
-                    (npx, npy), nd = n_wall
-                else:
-                    if npx == x and y <= npy <= end_y:
-                        obstacles.add(x + ny * NB_COLS)
-        
+                update_obstacles(curr_dir, x, ny)
+
     elif y == end_y:
         for nx in range(x, end_x, (-1 if x > end_x else 1)):
             itg = nx + y * NB_COLS
@@ -171,18 +183,7 @@ while True:
             if PART_ONE:
                 continue
             else:
-                nd = curr_dir
-                npy = y
-                npx = nx
-                for _ in range(3):
-                    n_wall = get_wall_pos(nd, npx, npy)
-                    if n_wall is None:
-                        break
-                    (npx, npy), nd = n_wall
-                else:
-                    if y == npy and npx == x:
-                        obstacles.add(nx + y * NB_COLS)
-                
+                update_obstacles(curr_dir, nx, y)                
 
     else:
         raise Exception(" Neither x and y are stable ! ")
@@ -192,4 +193,5 @@ while True:
 
 ###############################################################################
 print(len(visited))
-print(len(obstacles))
+print(founded)
+
