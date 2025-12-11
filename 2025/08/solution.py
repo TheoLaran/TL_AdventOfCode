@@ -15,61 +15,73 @@ def euclidian_dist_3D(x, y):
 
 # Save N first distances
 # N = 10 # short input
-N = 1000 # normal input
-
-distances = [float('inf')] * N
-idx_shortest_dist = [None] * N
+# N = 1000 # normal input
 
 from bisect import insort
 
 # Convert each line as 3D array point
 STREAM = list(map(lambda x: list(map(int, x.split(','))), STREAM))
 
-for i in range(len(STREAM)):
-    for j in range(i + 1, len(STREAM)):
-        c_dist = euclidian_dist_3D(STREAM[i], STREAM[j])
-
-        # If we are lower than the bigger distance, insort
-        if c_dist < distances[-1]:
-            insort(distances, c_dist)
-            distances.pop(-1)
-
-            distance_idx = distances.index(c_dist)
-            idx_shortest_dist = idx_shortest_dist[:distance_idx] + [[i, j]] + idx_shortest_dist[distance_idx:]
-
-            idx_shortest_dist.pop(-1)
 # Now that we have our 1000 shortest path, plug circuits
 # At the beggining they are all plugged to them self
 plugged = {
     idx: [idx]
     for idx in range(len(STREAM))
 }
-print("parsing final answer")
 
-while len(idx_shortest_dist) > 0:
-    
+mapping = list(range(len(STREAM)))
+distances = []
+
+# Compute distances for all points
+for i in range(len(STREAM)):
+    for j in range(i + 1, len(STREAM)):
+        c_dist = euclidian_dist_3D(STREAM[i], STREAM[j])
+        distances.append([c_dist, i, j])
+
+# Sort distances for 
+distances.sort(key=lambda x: x[0])
+
+while True:
+    c_dists = distances.pop(0)
+    min_distance = c_dists[0]
+
     # Get the next element in the list
-    path = idx_shortest_dist.pop(0)
-
-    # if they are already plugged together continue
-    if path[0] == path[1]:
-        continue
+    i += 1
 
     # plugged cable together
-    plugged[path[0]].extend(plugged[path[1]])
-    del plugged[path[1]]
+    path_ini, path_dest = c_dists[1], c_dists[2] 
+
+    # If both cable are plugged together continue
+    if mapping[path_ini] == mapping[path_dest]:
+        continue
+
+    # Save last plugged
+    last_plugged = (path_ini, path_dest)
+    plugged[mapping[path_ini]].extend(plugged[mapping[path_dest]])
+    del plugged[mapping[path_dest]]
 
     # replace the second plug by the base
-    for i in range(len(idx_shortest_dist)):
-        if idx_shortest_dist[i][0] == path[1]:
-            idx_shortest_dist[i][0] = path[0]
-        if idx_shortest_dist[i][1] == path[1]:
-            idx_shortest_dist[i][1] =path[0]
+    next_path_dest = path_dest
 
-biggest_sol = [-1] * 3
-# Compute the final solution
-for elem in plugged.values():
-    insort(biggest_sol, len(elem))
-    biggest_sol.pop(0)
+    # Map mapping to update the current value
+    for elem in range(len(mapping)):
+        # If initial path is already pointed
+        if elem != path_dest and mapping[elem] == mapping[path_dest]:
+            mapping[elem] = mapping[path_ini]
 
-print(biggest_sol[0] * biggest_sol[1] * biggest_sol[2])
+    # Update mapping list
+    mapping[path_dest] = mapping[path_ini]
+
+    # If everything is plugged exit
+    if len(plugged) == 1:
+        break
+
+print(STREAM[last_plugged[0]][0] * STREAM[last_plugged[1]][0])
+# SOLUTION 1
+# biggest_sol = [-1] * 3
+# # Compute the final solution
+# for elem in plugged.values():
+#     insort(biggest_sol, len(elem))
+#     biggest_sol.pop(0)
+
+# print(biggest_sol[0] * biggest_sol[1] * biggest_sol[2])
